@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+
+  redis:
+    extends:
+      file: docker-compose.yml
+      service: redis
+
+  zookeeper:
+    extends:
+      file: docker-compose.yml
+      service: zookeeper
+
+  kafka:
+    extends:
+      file: docker-compose.yml
+      service: kafka
+
+  mongodb:
+    extends:
+      file: docker-compose.yml
+      service: mongodb
+
+networks:
+  commerce-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  mongo-data:

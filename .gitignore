@@ -1,0 +1,37 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+*.env.local
+
+# Python sidecars
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Spring Boot
+spring-shell.log
+
+# Docker
+.docker/

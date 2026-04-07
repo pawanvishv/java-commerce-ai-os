@@ -1,0 +1,258 @@
+version: "3.9"
+
+networks:
+  commerce-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  mongo-data:
+  opensearch-data:
+  temporal-data:
+  kafka-data:
+  zookeeper-data:
+
+services:
+
+  # ─────────────────────────────────────────
+  # PostgreSQL
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: commerce-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: commerce
+      POSTGRES_PASSWORD: commerce
+      POSTGRES_DB: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U commerce"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Redis
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: commerce-redis
+    restart: unless-stopped
+    command: redis-server --requirepass commerce --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "commerce", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Zookeeper (required by Kafka)
+  # ─────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: commerce-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper
+    networks:
+      - commerce-net
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "echo ruok | timeout 2 nc -w 2 localhost 2181 || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ─────────────────────────────────────────
+  # Kafka
+  # ─────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: commerce-kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Kafka UI (dev convenience)
+  # ─────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: commerce-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    ports:
+      - "8090:8080"
+    networks:
+      - commerce-net
+
+  # ─────────────────────────────────────────
+  # MongoDB
+  # ─────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: commerce-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: commerce
+      MONGO_INITDB_ROOT_PASSWORD: commerce
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./init/mongo:/docker-entrypoint-initdb.d
+    networks:
+      - commerce-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # OpenSearch
+  # ─────────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    container_name: commerce-opensearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - commerce-net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status'" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  opensearch-dashboards:
+      image: opensearchproject/opensearch-dashboards:2.11.1
+      container_name: commerce-opensearch-dashboards
+      restart: unless-stopped
+      depends_on:
+        opensearch:
+          condition: service_healthy
+      environment:
+        - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+        - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+      ports:
+        - "5601:5601"
+      networks:
+        - commerce-net
+
+  # ─────────────────────────────────────────
+  # Temporal (workflow engine)
+  # ─────────────────────────────────────────
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: commerce-temporal
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=commerce
+      - POSTGRES_PWD=commerce
+      - POSTGRES_SEEDS=postgres
+      - TEMPORAL_BROADCAST_ADDRESS=127.0.0.1
+    ports:
+      - "7233:7233"
+    networks:
+      - commerce-net
+    healthcheck:
+      test: [ "CMD", "tctl", "--address", "localhost:7233", "cluster", "health" ]
+      interval: 20s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+
+  # ─────────────────────────────────────────
+  # Temporal UI (dev convenience)
+  # ─────────────────────────────────────────
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    container_name: commerce-temporal-ui
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8088:8080"
+    networks:
+      - commerce-net
+
+  # ─────────────────────────────────────────
+  # pgAdmin (dev convenience)
+  # ─────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:8.6
+    container_name: commerce-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@commerce.local
+      PGADMIN_DEFAULT_PASSWORD: commerce
+    ports:
+      - "5050:80"
+    networks:
+      - commerce-net
+

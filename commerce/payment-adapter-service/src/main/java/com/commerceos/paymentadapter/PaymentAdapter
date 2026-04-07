@@ -1,0 +1,12 @@
+package commercen.java;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class com.commerceos.paymentadapter {
+
+    public static void main(String[] args) {
+        SpringApplication.run(com.commerceos.paymentadapter.class, args);
+    }
+}

@@ -1,0 +1,48 @@
+spring:
+  main:
+    web-application-type: reactive
+  application:
+    name: api-gateway
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: commerce
+      timeout: 2000ms
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8081/.well-known/jwks.json
+
+  cloud:
+    discovery:
+      enabled: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+
+gateway:
+  rate-limit:
+    default-requests-per-second: 100
+    burst-capacity: 200
+  tenant-cache-ttl-seconds: 3600
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
+  level:
+    com.commerceos: DEBUG
+    org.springframework.cloud.gateway: INFO
+    org.springframework.security: INFO
